@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kagent-dev/kagent/go/controller/api/v1alpha1"
+	"github.com/kagent-dev/kagent/go/controller/api/v1alpha2"
 	"github.com/kagent-dev/kagent/go/internal/a2a"
-	"github.com/kagent-dev/kagent/go/internal/adk"
 	common "github.com/kagent-dev/kagent/go/internal/utils"
 	ctrl "sigs.k8s.io/controller-runtime"
 	a2aclient "trpc.group/trpc-go/trpc-a2a-go/client"
+	"trpc.group/trpc-go/trpc-a2a-go/server"
 )
 
 var (
@@ -19,8 +19,8 @@ var (
 type A2AReconciler interface {
 	ReconcileAgent(
 		ctx context.Context,
-		agent *v1alpha1.Agent,
-		adkConfig *adk.AgentConfig,
+		agent *v1alpha2.Agent,
+		card server.AgentCard,
 	) error
 
 	ReconcileAgentDeletion(
@@ -52,18 +52,19 @@ func NewReconciler(
 
 func (a *a2aReconciler) ReconcileAgent(
 	ctx context.Context,
-	agent *v1alpha1.Agent,
-	adkConfig *adk.AgentConfig,
+	agent *v1alpha2.Agent,
+	card server.AgentCard,
 ) error {
-	cardCopy := adkConfig.AgentCard
-	// Modify card for kagent proxy
 	agentRef := common.GetObjectRef(agent)
-	cardCopy.URL = fmt.Sprintf("%s/%s/", a.a2aBaseUrl, agentRef)
 
-	client, err := a2aclient.NewA2AClient(adkConfig.AgentCard.URL, a2aclient.WithBuffer(a.streamingInitialBufSize, a.streamingMaxBufSize))
+	client, err := a2aclient.NewA2AClient(card.URL, a2aclient.WithBuffer(a.streamingInitialBufSize, a.streamingMaxBufSize))
 	if err != nil {
 		return err
 	}
+
+	// Modify card for kagent proxy
+	cardCopy := card
+	cardCopy.URL = fmt.Sprintf("%s/%s/", a.a2aBaseUrl, agentRef)
 
 	return a.a2aHandler.SetAgentHandler(
 		agentRef,

@@ -45,11 +45,30 @@ export function NamespaceCombobox({
       setLoading(true);
       setError(null);
       const response = await listNamespaces();
-      
+
       if (!response.error) {
-        setNamespaces(response.data || []);
+        const sorted = [...(response.data || [])].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        );
+        setNamespaces(sorted);
         setError(null);
         onError?.(null);
+
+        // Set a default namespace if none is currently selected
+        if (!value) {
+          const names = sorted.map((ns) => ns.name);
+          let defaultNamespace: string | undefined;
+          if (names.includes("kagent")) {
+            defaultNamespace = "kagent";
+          } else if (names.includes("default")) {
+            defaultNamespace = "default";
+          } else if (names.length > 0) {
+            defaultNamespace = names[0];
+          }
+          if (defaultNamespace) {
+            onValueChange(defaultNamespace);
+          }
+        }
       } else {
         const errorMsg = response.error || 'Failed to load namespaces';
         setError(errorMsg);

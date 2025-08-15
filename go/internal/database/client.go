@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/kagent-dev/kagent/go/controller/api/v1alpha1"
+	"github.com/kagent-dev/kagent/go/controller/api/v1alpha2"
 	"gorm.io/gorm"
 	"trpc.group/trpc-go/trpc-a2a-go/protocol"
 )
@@ -24,9 +24,10 @@ type Client interface {
 	// Delete methods
 	DeleteSession(sessionName string, userID string) error
 	DeleteAgent(agentID string) error
-	DeleteToolServer(serverName string) error
+	DeleteToolServer(serverName string, groupKind string) error
 	DeleteTask(taskID string) error
 	DeletePushNotification(taskID string) error
+	DeleteToolsForServer(serverName string, groupKind string) error
 
 	// Get methods
 	GetSession(name string, userID string) (*Session, error)
@@ -49,7 +50,7 @@ type Client interface {
 	ListPushNotifications(taskID string) ([]*protocol.TaskPushNotificationConfig, error)
 
 	// Helper methods
-	RefreshToolsForServer(serverName string, tools ...*v1alpha1.MCPTool) error
+	RefreshToolsForServer(serverName string, tools ...*v1alpha2.MCPTool) error
 }
 
 type clientImpl struct {
@@ -123,8 +124,16 @@ func (c *clientImpl) DeleteAgent(agentID string) error {
 }
 
 // DeleteToolServer deletes a tool server by name and user ID
-func (c *clientImpl) DeleteToolServer(serverName string) error {
-	return delete[ToolServer](c.db, Clause{Key: "name", Value: serverName})
+func (c *clientImpl) DeleteToolServer(serverName string, groupKind string) error {
+	return delete[ToolServer](c.db,
+		Clause{Key: "name", Value: serverName},
+		Clause{Key: "group_kind", Value: groupKind})
+}
+
+func (c *clientImpl) DeleteToolsForServer(serverName string, groupKind string) error {
+	return delete[Tool](c.db,
+		Clause{Key: "server_name", Value: serverName},
+		Clause{Key: "group_kind", Value: groupKind})
 }
 
 // GetTaskMessages retrieves messages for a specific task
@@ -233,7 +242,7 @@ func (c *clientImpl) ListToolsForServer(serverName string) ([]Tool, error) {
 
 // RefreshToolsForServer refreshes a tool server
 // TODO: Use a transaction to ensure atomicity
-func (c *clientImpl) RefreshToolsForServer(serverName string, tools ...*v1alpha1.MCPTool) error {
+func (c *clientImpl) RefreshToolsForServer(serverName string, tools ...*v1alpha2.MCPTool) error {
 	existingTools, err := c.ListToolsForServer(serverName)
 	if err != nil {
 		return err
@@ -269,7 +278,7 @@ func (c *clientImpl) RefreshToolsForServer(serverName string, tools ...*v1alpha1
 
 	// Delete any tools that are in the existing tools but not in the new tools
 	for _, existingTool := range existingTools {
-		if !slices.ContainsFunc(tools, func(t *v1alpha1.MCPTool) bool {
+		if !slices.ContainsFunc(tools, func(t *v1alpha2.MCPTool) bool {
 			return t.Name == existingTool.ID
 		}) {
 			err = delete[Tool](c.db, Clause{Key: "name", Value: existingTool.ID})

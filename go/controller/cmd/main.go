@@ -61,8 +61,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/kagent-dev/kagent/go/controller/api/v1alpha1"
+	"github.com/kagent-dev/kagent/go/controller/api/v1alpha2"
 	"github.com/kagent-dev/kagent/go/controller/internal/controller"
 	"github.com/kagent-dev/kagent/go/internal/goruntime"
+	kmcpv1alpha1 "github.com/kagent-dev/kmcp/api/v1alpha1"
+	kmcpcontroller "github.com/kagent-dev/kmcp/pkg/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -81,6 +84,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha2.AddToScheme(scheme))
+	utilruntime.Must(kmcpv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -151,6 +156,11 @@ func main() {
 
 	flag.Var(&cfg.Streaming.MaxBufSize, "streaming-max-buf-size", "The maximum size of the streaming buffer.")
 	flag.Var(&cfg.Streaming.InitialBufSize, "streaming-initial-buf-size", "The initial size of the streaming buffer.")
+
+	flag.StringVar(&translator.DefaultImageConfig.Registry, "image-registry", translator.DefaultImageConfig.Registry, "The registry to use for the image.")
+	flag.StringVar(&translator.DefaultImageConfig.Tag, "image-tag", translator.DefaultImageConfig.Tag, "The tag to use for the image.")
+	flag.StringVar(&translator.DefaultImageConfig.PullPolicy, "image-pull-policy", translator.DefaultImageConfig.PullPolicy, "The pull policy to use for the image.")
+	flag.StringVar(&translator.DefaultImageConfig.Repository, "image-repository", translator.DefaultImageConfig.Repository, "The repository to use for the agent image.")
 
 	opts := zap.Options{
 		Development: true,
@@ -313,10 +323,8 @@ func main() {
 
 	dbClient := database.NewClient(dbManager)
 
-	kubeClient := mgr.GetClient()
-
 	apiTranslator := translator.NewAdkApiTranslator(
-		kubeClient,
+		mgr.GetClient(),
 		cfg.DefaultModelConfig,
 	)
 
@@ -331,38 +339,58 @@ func main() {
 
 	rcnclr := reconciler.NewKagentReconciler(
 		apiTranslator,
-		kubeClient,
+		mgr.GetClient(),
 		dbClient,
 		cfg.DefaultModelConfig,
 		a2aReconciler,
 	)
 
-	if err = (&controller.AgentReconciler{
-		Client:     kubeClient,
+	if err = (&kmcpcontroller.MCPServerReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MCPServer")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ServiceController{
+		Scheme:     mgr.GetScheme(),
+		Reconciler: rcnclr,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Service")
+		os.Exit(1)
+	}
+
+	if err := (&controller.MCPServerController{
+		Scheme:     mgr.GetScheme(),
+		Reconciler: rcnclr,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RemoteMCPServer")
+		os.Exit(1)
+	}
+
+	if err = (&controller.AgentController{
 		Scheme:     mgr.GetScheme(),
 		Reconciler: rcnclr,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Agent")
 		os.Exit(1)
 	}
-	if err = (&controller.ModelConfigReconciler{
-		Client:     kubeClient,
+	if err = (&controller.ModelConfigController{
 		Scheme:     mgr.GetScheme(),
 		Reconciler: rcnclr,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ModelConfig")
 		os.Exit(1)
 	}
-	if err = (&controller.ToolServerReconciler{
-		Client:     mgr.GetClient(),
+	if err = (&controller.RemoteMCPServerController{
 		Scheme:     mgr.GetScheme(),
 		Reconciler: rcnclr,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ToolServer")
 		os.Exit(1)
 	}
-	if err = (&controller.MemoryReconciler{
-		Client:     kubeClient,
+	if err = (&controller.MemoryController{
 		Scheme:     mgr.GetScheme(),
 		Reconciler: rcnclr,
 	}).SetupWithManager(mgr); err != nil {
@@ -402,7 +430,7 @@ func main() {
 
 	httpServer, err := httpserver.NewHTTPServer(httpserver.ServerConfig{
 		BindAddr:          cfg.HttpServerAddr,
-		KubeClient:        kubeClient,
+		KubeClient:        mgr.GetClient(),
 		A2AHandler:        a2aHandler,
 		WatchedNamespaces: watchNamespacesList,
 		DbClient:          dbClient,

@@ -1,42 +1,13 @@
 package database
 
 import (
-	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"time"
 
-	"github.com/kagent-dev/kagent/go/controller/api/v1alpha1"
 	"github.com/kagent-dev/kagent/go/internal/adk"
 	"gorm.io/gorm"
 	"trpc.group/trpc-go/trpc-a2a-go/protocol"
 )
-
-// JSONMap is a custom type for handling JSON columns in GORM
-type JSONMap map[string]interface{}
-
-// Scan implements the sql.Scanner interface
-func (j *JSONMap) Scan(value interface{}) error {
-	if value == nil {
-		*j = make(JSONMap)
-		return nil
-	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return errors.New("failed to scan JSONMap: value is not []byte")
-	}
-
-	return json.Unmarshal(bytes, j)
-}
-
-// Value implements the driver.Valuer interface
-func (j JSONMap) Value() (driver.Value, error) {
-	if j == nil {
-		return nil, nil
-	}
-	return json.Marshal(j)
-}
 
 // Agent represents an agent configuration
 type Agent struct {
@@ -45,7 +16,11 @@ type Agent struct {
 	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at"`
 
-	Config *adk.AgentConfig `gorm:"type:json;not null" json:"config"`
+	Type   string           `gorm:"not null" json:"type"`
+	// Config is optional and may be nil for some agent types.
+	// For agent types that require configuration, this field should be populated.
+	// For agent types that do not require configuration, this field should be nil.
+	Config *adk.AgentConfig `gorm:"type:json" json:"config"`
 }
 
 type Event struct {
@@ -162,13 +137,13 @@ type Tool struct {
 
 // ToolServer represents a tool server that provides tools
 type ToolServer struct {
-	CreatedAt     time.Time                 `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt     time.Time                 `gorm:"autoUpdateTime" json:"updated_at"`
-	DeletedAt     gorm.DeletedAt            `gorm:"index" json:"deleted_at"`
-	Name          string                    `gorm:"primaryKey;not null" json:"name"`
-	Description   string                    `json:"description"`
-	LastConnected *time.Time                `json:"last_connected,omitempty"`
-	Config        v1alpha1.ToolServerConfig `gorm:"type:json" json:"config"`
+	CreatedAt     time.Time      `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt     time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+	Name          string         `gorm:"primaryKey;not null" json:"name"`
+	GroupKind     string         `gorm:"primaryKey;not null" json:"group_kind"`
+	Description   string         `json:"description"`
+	LastConnected *time.Time     `json:"last_connected,omitempty"`
 }
 
 // TableName methods to match Python table names

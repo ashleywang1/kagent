@@ -9,9 +9,11 @@ import { useAgents } from "./AgentsProvider";
 
 interface DeleteButtonProps {
   agentName: string;
+  namespace: string;
+  disabled?: boolean;
 }
 
-export function DeleteButton({ agentName }: DeleteButtonProps) {
+export function DeleteButton({ agentName, namespace, disabled = false }: DeleteButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const { refreshAgents } = useAgents();
@@ -23,7 +25,7 @@ export function DeleteButton({ agentName }: DeleteButtonProps) {
 
     try {
       setIsDeleting(true);
-      await deleteAgent(agentName);
+      await deleteAgent(agentName, namespace);
 
       await refreshAgents();
     } catch (error) {
@@ -49,9 +51,11 @@ export function DeleteButton({ agentName }: DeleteButtonProps) {
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          setIsOpen(true);
+          if (!disabled) {
+            setIsOpen(true);
+          }
         }}
-        disabled={isDeleting}
+        disabled={isDeleting || disabled}
       >
         {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
       </Button>
